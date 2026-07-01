@@ -19,9 +19,11 @@ from std_msgs.msg import String
 
 ZONES = {"A": (-2.0, 1.2), "B": (-1.5, -1.0), "C": (-1.0, -2.2)}
 
-PLANNER_PROMPT = f"""너는 로봇 태스크 플래너다. 복합 한국어 목표를 '미션 배열' JSON으로만 변환하라.
-설명 금지, JSON 배열 하나만. 구역: A={ZONES['A']}, B={ZONES['B']}, C={ZONES['C']}.
-원소: {{"action":"pick_and_place","object":"","pick_x":0,"pick_y":0,"place_x":0,"place_y":0,"yaw":0}}"""
+PLANNER_PROMPT = f"""너는 로봇 태스크 플래너다. 복합 한국어 목표를 JSON 객체로만 변환하라.
+설명 금지, 반드시 {{"missions":[...]}} 형태의 JSON 객체 하나만 출력.
+구역 좌표: A={ZONES['A']}, B={ZONES['B']}, C={ZONES['C']}.
+missions 배열 원소 스키마:
+{{"action":"pick_and_place","object":"","pick_x":0,"pick_y":0,"place_x":0,"place_y":0,"yaw":0}}"""
 
 
 class LLMPlanner(Node):
@@ -59,8 +61,15 @@ class LLMPlanner(Node):
         힌트: 큐 비면 '모두 완료' 로그. m=self.queue.pop(0);
               self.pub_mission.publish(String(data=json.dumps(m))); self.active=True
         """
-        # TODO
-        pass
+        if self.active:
+            return
+        if not self.queue:
+            self._status("모든 미션 완료 ✅")
+            return
+        m = self.queue.pop(0)
+        self.pub_mission.publish(String(data=json.dumps(m)))
+        self.active = True
+        self._status(f"미션 투입: {m.get('action')} (남은 큐: {len(self.queue)}건)")
 
     # ── ① TODO: LLM 계획 (미션 배열) ─────────────────────────────
     def _plan(self, text):
@@ -68,16 +77,51 @@ class LLMPlanner(Node):
         힌트: self._llm None이면 None. create(..., response_format={"type":"json_object"},
               system=PLANNER_PROMPT). 결과가 list면 그대로, dict면 .get('missions',[]).
         """
-        # TODO
-        return None
+        if self._llm is None:
+            return None
+        try:
+            resp = self._llm.chat.completions.create(
+                model=self._model,
+                temperature=0,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": PLANNER_PROMPT},
+                    {"role": "user", "content": text},
+                ],
+            )
+            data = json.loads(resp.choices[0].message.content)
+            if isinstance(data, list):
+                return data
+            missions = data.get("missions", data.get("tasks", data.get("steps", [])))
+            return missions if isinstance(missions, list) else []
+        except Exception as e:
+            self.get_logger().warn(f"LLM 계획 실패 → 폴백: {e}")
+            return None
 
     # ── ② TODO: 폴백 분해 ────────────────────────────────────────
     def _plan_fallback(self, text):
         """규칙 기반: 등장 구역들 → 마지막 구역을 목적지로, 나머지를 출발지로 pick_and_place 생성.
         힌트: srcs=등장구역, dst=srcs[-1]; for z in srcs(z!=dst): pick=ZONES[z],place=ZONES[dst]
         """
-        # TODO
-        return []
+        import re
+        srcs = [z for z in re.findall(r"([A-C])\s*구역", text) if z in ZONES]
+        if len(srcs) < 2:
+            return []
+        dst = srcs[-1]
+        missions = []
+        for z in srcs:
+            if z == dst:
+                continue
+            px, py = ZONES[z]
+            lx, ly = ZONES[dst]
+            missions.append({
+                "action": "pick_and_place",
+                "object": "박스",
+                "pick_x": px, "pick_y": py,
+                "place_x": lx, "place_y": ly,
+                "yaw": 0.0,
+            })
+        return missions
 
     def _init_groq(self):
         key = os.environ.get("GROQ_API_KEY", "").strip()

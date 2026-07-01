@@ -9,29 +9,40 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      network: host
     image: nd1capstone/ros2-gazebo-vnc:humble-1.3-tb3
     container_name: nd1_capstone_dev
     ports:
-      - "8080:80"     # noVNC 웹 데스크탑
-      - "8765:8765"   # Foxglove Studio
+      - "8080:80"
+      - "8765:8765"
     volumes:
-      - ./workspace:/home/ubuntu/ros2_ws/src   # 학생 ROS2 패키지 (colcon build 대상)
+      - ./workspace:/home/ubuntu/ros2_ws/src
       - ./foxglove:/home/ubuntu/foxglove
       - nd1_build_cache:/home/ubuntu/ros2_ws/build
+      - /tmp/.X11-unix:/tmp/.X11-unix   # 호스트 X11 소켓 공유 → DISPLAY=:0 사용 가능
     environment:
       - DISPLAY=:1
       - RESOLUTION=1920x1080
       - VNC_PW=nd1capstone
-      # ── ★ 안정 기동: 소프트웨어 렌더 (WSL2 OpenGL 한계 회피) ──
-      - LIBGL_ALWAYS_SOFTWARE=1
-      - GALLIUM_DRIVER=llvmpipe
       - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LIBGL_ALWAYS_SOFTWARE=0   # Dockerfile ENV 덮어쓰기 → GPU 렌더링 활성화
+      - GALLIUM_DRIVER=
       # ── Node A(LLM) — .env 에서 주입 ──
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GROQ_MODEL=${GROQ_MODEL:-openai/gpt-oss-20b}
       # ── ROS2 ──
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped   # Docker 데몬 재시작 시 컨테이너 자동 복구
     security_opt:
       - seccomp:unconfined
     shm_size: '2gb'        # Gazebo + Nav2 + VNC 동시 구동 시 SHM 부족 방지
