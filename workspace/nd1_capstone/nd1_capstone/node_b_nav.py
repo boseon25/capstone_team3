@@ -110,7 +110,8 @@ class NodeBNav(Node):
             self._dock_result(False)
             return
 
-        if self.sim_mode:
+        if self.sim_mode or not self._dock_ready:
+            # TB3에는 실제 도킹 스테이션이 없음 — dock_ready가 False면 무조건 성공 처리
             self._dock_result(True)
             return
 

@@ -6,14 +6,14 @@
 #     ros2 launch nd1_capstone bringup.launch.py sim_mode:=true
 #
 #  사용 (실연동 통합 — Gazebo는 터미널1에서 먼저 기동):
-#     # 터미널1: ros2 launch turtlebot4_ignition_bringup turtlebot4_ignition.launch.py
+#     # 터미널1: ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py
 #     # 터미널2(이 런처가 SLAM+Nav2+4노드를 한 번에):
 #     ros2 launch nd1_capstone bringup.launch.py \
 #         sim_mode:=false slam:=true nav2:=true
 #
 #  사전 맵을 쓰는 경우(SLAM 대신 AMCL 로컬라이제이션):
 #     ros2 launch nd1_capstone bringup.launch.py \
-#         sim_mode:=false localization:=true map:=/경로/warehouse.yaml nav2:=true
+#         sim_mode:=false localization:=true map:=/경로/map.yaml nav2:=true
 #     → RViz "2D Pose Estimate"로 초기 위치를 찍어야 map→odom 발행됨.
 #
 #  ⚠️ 핵심: global_costmap이 base_link→map 변환을 얻으려면 map→odom 공급원이
@@ -37,7 +37,7 @@ def generate_launch_description():
     map_yaml = LaunchConfiguration("map")
 
     params = [{"sim_mode": sim}]
-    tb4_nav = FindPackageShare("turtlebot4_navigation")
+    nav2_bringup = FindPackageShare("nav2_bringup")
 
     # ── 인자 선언 ────────────────────────────────────────────────
     args = [
@@ -51,8 +51,6 @@ def generate_launch_description():
                               description="true=Nav2 기동(navigate_to_pose 액션 서버)"),
         DeclareLaunchArgument("map", default_value="",
                               description="localization:=true 일 때 사용할 맵 yaml 경로"),
-        DeclareLaunchArgument("world_name", default_value="warehouse",
-                              description="Node C 텔레포트 대상 Ignition 월드 이름"),
         DeclareLaunchArgument("box_model", default_value="box1",
                               description="Node C 텔레포트 대상 박스 모델 이름"),
         DeclareLaunchArgument("box_sdf_path", default_value="",
@@ -68,21 +66,21 @@ def generate_launch_description():
         # Gazebo 시뮬 시각과 실제 시각을 혼동해 "Transform too old" 후 즉시 성공 처리해버림.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution(
-                [tb4_nav, "launch", "slam.launch.py"])),
+                [nav2_bringup, "launch", "slam_launch.py"])),
             condition=IfCondition(use_slam),
             launch_arguments={"use_sim_time": "true"}.items(),
         ),
         # Localization: 사전 맵 + AMCL (RViz 2D Pose Estimate로 초기화 필요)
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution(
-                [tb4_nav, "launch", "localization.launch.py"])),
+                [nav2_bringup, "launch", "localization_launch.py"])),
             condition=IfCondition(use_loc),
             launch_arguments={"map": map_yaml, "use_sim_time": "true"}.items(),
         ),
         # Nav2: 경로계획/제어/코스트맵 (navigate_to_pose 액션 서버)
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution(
-                [tb4_nav, "launch", "nav2.launch.py"])),
+                [nav2_bringup, "launch", "navigation_launch.py"])),
             condition=IfCondition(use_nav2),
             launch_arguments={"use_sim_time": "true"}.items(),
         ),
@@ -97,7 +95,6 @@ def generate_launch_description():
         Node(package="nd1_capstone", executable="node_c_grasp", name="node_c_grasp",
              output="screen", parameters=[{
                  "sim_mode": sim,
-                 "world_name": LaunchConfiguration("world_name"),
                  "box_model": LaunchConfiguration("box_model"),
                  "box_sdf_path": LaunchConfiguration("box_sdf_path"),
              }]),

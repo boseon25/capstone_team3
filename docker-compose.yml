@@ -9,7 +9,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: nd1capstone/ros2-gazebo-vnc:humble-1.2
+    image: nd1capstone/ros2-gazebo-vnc:humble-1.3-tb3
     container_name: nd1_capstone_dev
     ports:
       - "8080:80"     # noVNC 웹 데스크탑

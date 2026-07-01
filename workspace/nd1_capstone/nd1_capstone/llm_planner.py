@@ -17,7 +17,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-ZONES = {"A": (1.5, 0.5), "B": (2.5, -1.0), "C": (0.5, 2.0)}
+ZONES = {"A": (-2.0, 1.2), "B": (-1.5, -1.0), "C": (-1.0, -2.2)}
 
 PLANNER_PROMPT = f"""너는 로봇 태스크 플래너다. 복합 한국어 목표를 '미션 배열' JSON으로만 변환하라.
 설명 금지, JSON 배열 하나만. 구역: A={ZONES['A']}, B={ZONES['B']}, C={ZONES['C']}.

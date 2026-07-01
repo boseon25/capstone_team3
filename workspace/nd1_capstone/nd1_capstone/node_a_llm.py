@@ -9,7 +9,10 @@
 #  토픽 계약(고정):
 #    In  /llm_command (std_msgs/String) — 사용자 자연어
 #    Out /mission     (std_msgs/String) — RobotCommand JSON 1건
-#  표준 좌표: A(1.5,0.5) B(2.5,-1.0) C(0.5,2.0)  ※ 변경 금지
+#  표준 좌표: A(-2.0,1.2) B(-1.5,-1.0) C(-1.0,-2.2)  ※ 변경 금지
+#  (turtlebot3_world 로봇 스폰(-2.0,-0.5) 인근 서쪽 열린 공간 — 중앙 기둥 장식물·
+#   SLAM 미탐사 지역 회피. 온라인 SLAM은 로봇이 가본 적 없는 먼 좌표로는
+#   Nav2 goal이 "off the global costmap"로 즉시 거부되므로 스폰 근처로 제한)
 # ════════════════════════════════════════════════════════════════
 import json
 import os
@@ -21,7 +24,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from pydantic import BaseModel, Field
 
-ZONES = {"A": (1.5, 0.5), "B": (2.5, -1.0), "C": (0.5, 2.0)}
+ZONES = {"A": (-2.0, 1.2), "B": (-1.5, -1.0), "C": (-1.0, -2.2)}
 
 
 class ActionType(str, Enum):
@@ -42,7 +45,7 @@ class RobotCommand(BaseModel):
 
 
 SYSTEM_PROMPT = """너는 로봇 명령 파서다. 한국어 명령을 RobotCommand JSON으로만 변환한다.
-구역 좌표: A=(1.5,0.5), B=(2.5,-1.0), C=(0.5,2.0).
+구역 좌표: A=(-2.0,1.2), B=(-1.5,-1.0), C=(-1.0,-2.2).
 스키마: {"action":"pick_and_place|navigate|stop","object":"","pick_x":0,"pick_y":0,"place_x":0,"place_y":0,"yaw":0}
 설명 없이 JSON 객체 하나만 출력."""
 
