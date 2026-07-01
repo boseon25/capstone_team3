@@ -1,0 +1,37 @@
+# ════════════════════════════════════════════════════════════════
+#  docker-compose.wslg.yml — 개인 개발용 WSLg 렌더 override
+#  목적: 컨테이너 GUI(Gazebo)를 noVNC 대신 WSLg(Windows 네이티브 창)로 렌더 → GPU(d3d12) 가속
+#  베이스(noVNC)는 변경하지 않음. 이 파일을 -f로 얹을 때만 동작.
+#
+#  ⚠️ 반드시 WSL 우분투 터미널에서 실행 (PowerShell ❌ — WSLg 소켓/환경이 WSL 세션에 존재):
+#     docker compose -f docker-compose.yml -f docker-compose.wslg.yml up --build
+#  GUI는 브라우저(8080) 대신 Windows 바탕화면에 창으로 뜸.
+#  검증(컨테이너 내부): glxinfo | grep -E "OpenGL renderer|Accelerated"
+#     D3D12 (NVIDIA ...) → 성공 / D3D12 (Intel ...) → Windows에서 NVIDIA 라우팅 필요 / llvmpipe → 실패
+# ════════════════════════════════════════════════════════════════
+services:
+  capstone_env:
+    devices:
+      - /dev/dxg                          # WSL GPU 브리지
+    volumes:
+      - /usr/lib/wsl:/usr/lib/wsl:ro      # libd3d12.so / libdxcore.so
+      - /mnt/wslg:/mnt/wslg               # WSLg Wayland/X 소켓
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    environment:
+      # ── 디스플레이를 WSLg(:0)로 전환 (베이스의 :1=Xvnc 대신) ──
+      - DISPLAY=:0
+      - WAYLAND_DISPLAY=wayland-0
+      - XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir
+      - PULSE_SERVER=/mnt/wslg/PulseServer
+      # ── 베이스의 소프트웨어 강제 해제 + d3d12 가속 ──
+      - LIBGL_ALWAYS_SOFTWARE=0
+      - GALLIUM_DRIVER=d3d12
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib
+    # ── CUDA 컴퓨트용(예: Ollama). 그래픽은 위 d3d12가 담당 ──
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
