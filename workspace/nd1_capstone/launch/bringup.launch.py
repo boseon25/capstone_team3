@@ -64,23 +64,27 @@ def generate_launch_description():
     # ── map→odom 공급원 (둘 중 택1) + Nav2 (조건부 포함) ──────────
     includes = [
         # SLAM: 사전 맵 없이 map→odom 발행 (시뮬 시연에 가장 간단)
+        # use_sim_time=true 필수 — 안 넘기면 기본값 false로 돌아서 controller_server가
+        # Gazebo 시뮬 시각과 실제 시각을 혼동해 "Transform too old" 후 즉시 성공 처리해버림.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution(
                 [tb4_nav, "launch", "slam.launch.py"])),
             condition=IfCondition(use_slam),
+            launch_arguments={"use_sim_time": "true"}.items(),
         ),
         # Localization: 사전 맵 + AMCL (RViz 2D Pose Estimate로 초기화 필요)
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution(
                 [tb4_nav, "launch", "localization.launch.py"])),
             condition=IfCondition(use_loc),
-            launch_arguments={"map": map_yaml}.items(),
+            launch_arguments={"map": map_yaml, "use_sim_time": "true"}.items(),
         ),
         # Nav2: 경로계획/제어/코스트맵 (navigate_to_pose 액션 서버)
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution(
                 [tb4_nav, "launch", "nav2.launch.py"])),
             condition=IfCondition(use_nav2),
+            launch_arguments={"use_sim_time": "true"}.items(),
         ),
     ]
 

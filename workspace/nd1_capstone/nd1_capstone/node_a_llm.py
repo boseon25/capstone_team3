@@ -13,6 +13,7 @@
 # ════════════════════════════════════════════════════════════════
 import json
 import os
+import re
 from enum import Enum
 
 import rclpy
@@ -76,8 +77,23 @@ class NodeALLM(Node):
           - 응답 JSON을 RobotCommand(**json.loads(...)) 로 검증해 반환
           - 예외는 try/except로 잡고 return None (폴백이 받도록)
         """
-        # TODO: 위 힌트대로 구현
-        return None
+        if self._llm is None:
+            return None
+        try:
+            resp = self._llm.chat.completions.create(
+                model=self._model,
+                temperature=0,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": text},
+                ],
+            )
+            data = json.loads(resp.choices[0].message.content)
+            return RobotCommand(**data)
+        except Exception as e:
+            self.get_logger().warn(f"groq 파싱 실패 → 폴백 사용: {e}")
+            return None
 
     # ── ② TODO: 키워드 폴백 파서 (groq 없거나 실패 시) ────────────
     def _parse_fallback(self, text: str) -> RobotCommand:
@@ -90,7 +106,25 @@ class NodeALLM(Node):
           - 구역 1개만 → NAVIGATE, place=ZONES[그 구역]
           - 아무것도 아니면 → STOP (안전 기본값)
         """
-        # TODO: 위 규칙대로 구현 후 RobotCommand 반환
+        if any(k in text for k in ("정지", "멈춰", "스톱")):
+            return RobotCommand(action=ActionType.STOP)
+
+        zones = [z for z in re.findall(r"([A-Z])\s*구역", text) if z in ZONES]
+        move_kw = ("옮", "이동", "놓", "배치", "운반", "가져")
+
+        if any(k in text for k in move_kw) and len(zones) >= 2:
+            pick_x, pick_y = ZONES[zones[0]]
+            place_x, place_y = ZONES[zones[1]]
+            return RobotCommand(
+                action=ActionType.PICK_AND_PLACE,
+                object=self._extract_object(text),
+                pick_x=pick_x, pick_y=pick_y,
+                place_x=place_x, place_y=place_y,
+            )
+        if len(zones) == 1:
+            place_x, place_y = ZONES[zones[0]]
+            return RobotCommand(action=ActionType.NAVIGATE, place_x=place_x, place_y=place_y)
+
         return RobotCommand(action=ActionType.STOP)
 
     @staticmethod

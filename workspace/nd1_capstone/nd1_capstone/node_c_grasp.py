@@ -72,8 +72,14 @@ class NodeCGrasp(Node):
           - return list(numerical_ik(self._robot, (x, y)))   # [θ1,θ2,θ3]
           - 예외는 try/except, sim_mode면 [0,0,0] 반환
         """
-        # TODO
-        return [0.0, 0.0, 0.0] if self.sim_mode else None
+        if self._robot is None:
+            return [0.0, 0.0, 0.0] if self.sim_mode else None
+        try:
+            from nd1_m7_ik import numerical_ik
+            return list(numerical_ik(self._robot, (x, y)))
+        except Exception as e:
+            self.get_logger().warn(f"IK 계산 실패: {e}")
+            return [0.0, 0.0, 0.0] if self.sim_mode else None
 
     def _init_arm(self):
         try:
@@ -100,11 +106,42 @@ class NodeCGrasp(Node):
           - 응답 stdout 에 'true' 포함이면 성공
           - TimeoutExpired/FileNotFoundError 예외 처리 → False
         """
-        # TODO
         if self.sim_mode:
             self._status(f"[sim] {op} 텔레포트 가정 — 성공")
             return True
-        return False
+
+        world = self.get_parameter("world_name").value
+        box = self.get_parameter("box_model").value
+
+        if op == "grasp":
+            cmd = [
+                "ign", "service", "-s", f"/world/{world}/remove",
+                "--reqtype", "ignition.msgs.Entity",
+                "--reptype", "ignition.msgs.Boolean",
+                "--timeout", "3000",
+                "--req", f'name: "{box}" type: MODEL',
+            ]
+        else:
+            sdf_path = self.get_parameter("box_sdf_path").value or f"{box}.sdf"
+            cmd = [
+                "ign", "service", "-s", f"/world/{world}/create",
+                "--reqtype", "ignition.msgs.EntityFactory",
+                "--reptype", "ignition.msgs.Boolean",
+                "--timeout", "3000",
+                "--req",
+                f'sdf_filename: "{sdf_path}" '
+                f'pose: {{ position: {{ x: {x} y: {y} z: 0.1 }} }} name: "{box}"',
+            ]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            ok = "true" in result.stdout.lower()
+            if not ok:
+                self._status(f"⚠️ ign service 응답 실패: {result.stdout.strip()} {result.stderr.strip()}")
+            return ok
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            self._status(f"⚠️ ign service 호출 실패: {e}")
+            return False
 
     def _result(self, ok: bool):
         self.pub_result.publish(Bool(data=ok))
