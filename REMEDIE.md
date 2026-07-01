@@ -116,7 +116,7 @@
 #### `supervisord.conf` (호스트 루트)
 - VNC + noVNC 프로세스 관리용 supervisor 설정
 - `[program:vnc]`: ubuntu 유저로 VNC 서버 기동
-- `[program:novnc]`: websockify로 포트 80에 noVNC 서빙
+- `[program:novnc]`: websockify로 포트 80에 noVNC 서빙 # 리눅스 데스크탑에서 vnc 접속이 튕겨서 한겁니다.
 
 #### `workspace/nd1_capstone/scripts/term1_launch.sh`
 - 전체 스택 기동 스크립트 (컨테이너 내부에서 실행)
@@ -133,14 +133,6 @@
 #### `workspace/nd1_capstone/scripts/gui_start.sh`
 - GUI 시작 헬퍼 스크립트
 
----
-
-### 2-3. 컨테이너 내부 직접 패치 (재빌드 시 초기화됨)
-
-#### `/opt/ros/humble/share/turtlebot3_gazebo/launch/spawn_turtlebot3.launch.py`
-- **변경**: `'-z', '0.01'` → `'-z', '0.5'`
-- **이유**: z=0.01이면 로봇이 지면 아래로 떨어지는 물리 시뮬레이션 버그 발생
-- **주의**: 컨테이너 재생성 시 재패치 필요
 
 ---
 
@@ -183,8 +175,7 @@ xhost +local:docker
 ```
 
 ### Step 1. 컨테이너 시작
-```bash
-# 호스트에서:
+```bash 
 cd /home/jj/capstone_team3
 docker compose up -d
 ```
@@ -330,21 +321,6 @@ ros2 topic pub --once /goal_command std_msgs/String \
 
 ## 7. 알려진 주의사항
 
-### 컨테이너 재생성 시 재패치 필요
-```bash
-# 컨테이너 안에서:
-sed -i "s/'-z', '0.01'/'-z', '0.5'/" \
-  /opt/ros/humble/share/turtlebot3_gazebo/launch/spawn_turtlebot3.launch.py
-```
-→ 안 하면 로봇이 지면 아래로 떨어짐
-
-### colcon build 재빌드 필요 시
-```bash
-# 컨테이너 안에서:
-cd /home/ubuntu/ros2_ws
-colcon build --symlink-install --packages-select nd1_capstone
-source install/setup.bash
-```
 
 ### GROQ API 키 없을 때
 - node_a_llm: 키워드 폴백 파서로 자동 전환 ("A구역", "B구역" 등 한국어 키워드 인식)
