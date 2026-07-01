@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ════════════════════════════════════════════════════════════════
+# ══
 #  자동 스모크 테스트  (ND1 캡스톤)
 #  /llm_command 주입 → /robot_status 가 DONE 도달하면 PASS, 타임아웃/FAILED면 FAIL
 #  ※ 반드시 컨테이너에서, bringup.launch.py 실행 중인 상태로 별도 터미널에서 실행.
