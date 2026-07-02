@@ -3,19 +3,26 @@
 #  Node A — 자연어 명령 해석 [학생 구현]
 #  역할: /llm_command(String) → groq LLM 파싱(+폴백) → /mission(String, JSON)
 #
-#  In  /llm_command (std_msgs/String) — 사용자 자연어
-#  Out /mission     (std_msgs/String) — RobotCommand JSON 1건
+#  제공(인프라): 데이터 계약(RobotCommand), pub/sub, groq 클라이언트, main
+#  구현(TODO):  ① _parse_with_llm  ② _parse_fallback
+#
+#  토픽 계약(고정):
+#    In  /llm_command (std_msgs/String) — 사용자 자연어
+#    Out /mission     (std_msgs/String) — RobotCommand JSON 1건
 #  표준 좌표: A(1.5,0.5) B(2.5,-1.0) C(0.5,2.0)  ※ 변경 금지
 # ════════════════════════════════════════════════════════════════
+#!/usr/bin/env python3
+#!/usr/bin/env python3
+#!/usr/bin/env python3
 import json
 import os
 import re
+from dataclasses import asdict, dataclass
 from enum import Enum
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from pydantic import BaseModel, Field
 
 ZONES = {"A": (1.5, 0.5), "B": (2.5, -1.0), "C": (0.5, 2.0)}
 
@@ -26,25 +33,43 @@ class ActionType(str, Enum):
     STOP = "stop"
 
 
-class RobotCommand(BaseModel):
-    """LLM/폴백이 생성하는 구조화 명령. 이 스키마를 그대로 /mission 으로 발행한다."""
+@dataclass
+class RobotCommand:
     action: ActionType
     object: str = ""
     pick_x: float = 0.0
     pick_y: float = 0.0
     place_x: float = 0.0
     place_y: float = 0.0
-    yaw: float = Field(default=0.0)
+    yaw: float = 0.0
+
+    @classmethod
+    def from_dict(cls, data):
+        action = data.get("action", "stop")
+        try:
+            action = ActionType(action)
+        except ValueError:
+            action = ActionType.STOP
+
+        return cls(
+            action=action,
+            object=str(data.get("object", "")),
+            pick_x=float(data.get("pick_x", 0.0)),
+            pick_y=float(data.get("pick_y", 0.0)),
+            place_x=float(data.get("place_x", 0.0)),
+            place_y=float(data.get("place_y", 0.0)),
+            yaw=float(data.get("yaw", 0.0)),
+        )
+
+    def to_json(self):
+        data = asdict(self)
+        data["action"] = self.action.value
+        return json.dumps(data, ensure_ascii=False)
 
 
 SYSTEM_PROMPT = """너는 로봇 명령 파서다. 한국어 명령을 RobotCommand JSON으로만 변환한다.
 구역 좌표: A=(1.5,0.5), B=(2.5,-1.0), C=(0.5,2.0).
 스키마: {"action":"pick_and_place|navigate|stop","object":"","pick_x":0,"pick_y":0,"place_x":0,"place_y":0,"yaw":0}
-규칙:
-- 물체를 A에서 B로 옮기라는 명령은 pick_and_place로 변환한다.
-- 특정 구역으로 이동하라는 명령은 navigate로 변환한다.
-- 정지, 멈춤, stop은 stop으로 변환한다.
-- 백신 샘플, 샘플 컨테이너, box1은 모두 object="box1"로 변환한다.
 설명 없이 JSON 객체 하나만 출력."""
 
 
@@ -54,6 +79,7 @@ class NodeALLM(Node):
         self.pub = self.create_publisher(String, "/mission", 10)
         self.pub_status = self.create_publisher(String, "/robot_status", 10)
         self.create_subscription(String, "/llm_command", self._on_command, 10)
+
         self._llm = self._init_groq()
         self._model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
         self._status(f"Node A 시작 — LLM={'ON' if self._llm else 'OFF(폴백)'}")
@@ -63,22 +89,20 @@ class NodeALLM(Node):
         self._status(f"명령 수신: '{text}'")
 
         cmd = self._parse_with_llm(text) or self._parse_fallback(text)
+        self.pub.publish(String(data=cmd.to_json()))
 
-        self.pub.publish(String(data=cmd.model_dump_json()))
         self._status(
             f"미션 발행: {cmd.action.value} "
-            f"object={cmd.object} "
             f"pick=({cmd.pick_x},{cmd.pick_y}) "
             f"place=({cmd.place_x},{cmd.place_y})"
         )
 
     def _parse_with_llm(self, text: str):
-        """Groq LLM으로 자연어를 RobotCommand로 변환한다. 실패하면 None을 반환해 폴백 파서가 처리한다."""
         if self._llm is None:
             return None
 
         try:
-            res = self._llm.chat.completions.create(
+            response = self._llm.chat.completions.create(
                 model=self._model,
                 temperature=0,
                 response_format={"type": "json_object"},
@@ -87,52 +111,42 @@ class NodeALLM(Node):
                     {"role": "user", "content": text},
                 ],
             )
-            content = res.choices[0].message.content
-            data = json.loads(content)
-            return RobotCommand(**data)
+
+            raw = response.choices[0].message.content
+            data = json.loads(raw)
+            return RobotCommand.from_dict(data)
+
         except Exception as e:
-            self.get_logger().warn(f"LLM 파싱 실패 → 폴백 사용: {e}")
+            self._status(f"LLM 파싱 실패 → 폴백 사용: {e}")
             return None
 
     def _parse_fallback(self, text: str) -> RobotCommand:
-        """규칙 기반 파서. Groq API가 없어도 데모가 돌아가도록 하는 안전망이다."""
-        normalized = text.strip()
-        lower = normalized.lower()
-
-        if any(k in lower for k in ["stop", "정지", "멈춰", "멈추", "스톱", "중단"]):
+        if any(k in text for k in ["정지", "멈춰", "스톱", "stop", "STOP"]):
             return RobotCommand(action=ActionType.STOP)
 
-        zones = self._extract_zones(normalized)
-        obj = self._extract_object(normalized)
+        zones = self._extract_zones(text)
+        move_keywords = ["옮", "이동", "놓", "배치", "운반", "가져", "보내"]
 
-        move_keywords = ["옮", "이동", "놓", "배치", "운반", "가져", "전달", "반출"]
-        has_move_intent = any(k in normalized for k in move_keywords)
-
-        if has_move_intent and len(zones) >= 2:
-            pick_zone = zones[0]
-            place_zone = zones[1]
-            pick_x, pick_y = ZONES[pick_zone]
-            place_x, place_y = ZONES[place_zone]
-
+        if any(k in text for k in move_keywords) and len(zones) >= 2:
+            pick = ZONES[zones[0]]
+            place = ZONES[zones[1]]
             return RobotCommand(
                 action=ActionType.PICK_AND_PLACE,
-                object=obj,
-                pick_x=pick_x,
-                pick_y=pick_y,
-                place_x=place_x,
-                place_y=place_y,
+                object=self._extract_object(text),
+                pick_x=pick[0],
+                pick_y=pick[1],
+                place_x=place[0],
+                place_y=place[1],
                 yaw=0.0,
             )
 
         if len(zones) >= 1:
-            target_zone = zones[0]
-            place_x, place_y = ZONES[target_zone]
-
+            place = ZONES[zones[0]]
             return RobotCommand(
                 action=ActionType.NAVIGATE,
-                object=obj,
-                place_x=place_x,
-                place_y=place_y,
+                object="",
+                place_x=place[0],
+                place_y=place[1],
                 yaw=0.0,
             )
 
@@ -140,46 +154,29 @@ class NodeALLM(Node):
 
     @staticmethod
     def _extract_zones(text: str):
-        """문장 안에서 A, B, C 구역이 등장한 순서대로 추출한다."""
-        hits = []
+        compact = text.upper().replace(" ", "")
+        found = []
 
-        for zone in ZONES.keys():
-            patterns = [
-                rf"{zone}\s*구역",
-                rf"구역\s*{zone}",
-                rf"(?<![A-Za-z0-9]){zone}(?![A-Za-z0-9])",
-            ]
+        pattern = re.compile(r"(A|B|C)(?:구역|지역|존|에서|으로|로|에)?")
+        for match in pattern.finditer(compact):
+            zone = match.group(1)
+            if zone in ZONES:
+                found.append(zone)
 
-            for pattern in patterns:
-                for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-                    hits.append((match.start(), zone))
-
-        hits.sort(key=lambda x: x[0])
-
-        ordered_zones = []
-        for _, zone in hits:
-            if zone not in ordered_zones:
-                ordered_zones.append(zone)
-
-        return ordered_zones
+        return found
 
     @staticmethod
     def _extract_object(text: str) -> str:
-        """프로젝트 시나리오의 백신 샘플 컨테이너는 box1로 통일한다."""
-        lower = text.lower()
-
-        if "box1" in lower:
-            return "box1"
-
-        if any(k in text for k in ["백신", "샘플", "컨테이너", "박스", "box"]):
-            return "box1"
-
-        return "box1"
+        match = re.search(r"([가-힣A-Za-z0-9_]+)\s*(?:을|를)", text)
+        if match:
+            return match.group(1)
+        return "박스"
 
     def _init_groq(self):
         key = os.environ.get("GROQ_API_KEY", "").strip()
         if not key or key.startswith("your_"):
             return None
+
         try:
             from groq import Groq
             return Groq(api_key=key)
@@ -200,8 +197,7 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":
