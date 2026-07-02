@@ -1,0 +1,9 @@
+api_key.txt
+env.example
+my_env.example
+.env
+__pycache__/
+*.pyc
+build/
+install/
+log/

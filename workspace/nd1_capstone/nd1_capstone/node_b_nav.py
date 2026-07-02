@@ -17,6 +17,7 @@ import math
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String, Bool
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import NavigateToPose
@@ -56,8 +57,28 @@ class NodeBNav(Node):
                   goal = NavigateToPose.Goal(); goal.pose = self._pose(x,y,yaw)
                   self._nav_client.send_goal_async(goal).add_done_callback(self._nav_goal_cb)
         """
-        # TODO
-        self._nav_result(False)
+        if self._active:
+            self._status("⚠️ 이동 진행 중 — 요청 무시")
+            return
+        try:
+            d = json.loads(msg.data)
+            x, y, yaw = float(d["x"]), float(d["y"]), float(d.get("yaw", 0.0))
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            self._status(f"⚠️ nav_request 파싱 실패: {e}")
+            self._nav_result(False)
+            return
+
+        self._active = True
+        if self.sim_mode:
+            t = self.create_timer(2.0, lambda: (t.cancel(), self._nav_result(True)))
+            return
+        if not self._nav_client.wait_for_server(timeout_sec=self.timeout):
+            self._status("⚠️ navigate_to_pose 서버 없음")
+            self._nav_result(False)
+            return
+        goal = NavigateToPose.Goal()
+        goal.pose = self._pose(x, y, yaw)
+        self._nav_client.send_goal_async(goal).add_done_callback(self._nav_goal_cb)
 
     def _nav_goal_cb(self, future):
         h = future.result()
@@ -81,8 +102,29 @@ class NodeBNav(Node):
               * 그 외(True) → self._send_dock_action(self._undock_action, self._UndockGoal())
           - op=="dock": self._send_dock_action(self._dock_action_cli, self._DockGoal())
         """
-        # TODO
-        self._dock_result(False)
+        try:
+            d = json.loads(msg.data)
+            op = d.get("op", "undock")
+        except json.JSONDecodeError as e:
+            self._status(f"⚠️ dock_request 파싱 실패: {e}")
+            self._dock_result(False)
+            return
+
+        if self.sim_mode or not self._dock_ready:
+            # TB3에는 실제 도킹 스테이션이 없음 — dock_ready가 False면 무조건 성공 처리
+            self._dock_result(True)
+            return
+
+        if op == "undock":
+            if self._is_docked is False:
+                self._dock_result(True)
+            else:
+                self._send_dock_action(self._undock_action, self._UndockGoal())
+        elif op == "dock":
+            self._send_dock_action(self._dock_action_cli, self._DockGoal())
+        else:
+            self._status(f"⚠️ 알 수 없는 dock op: {op}")
+            self._dock_result(False)
 
     def _send_dock_action(self, client, goal):
         if not self._dock_ready or client is None:
@@ -112,8 +154,9 @@ class NodeBNav(Node):
             self._DockGoal = Dock.Goal
             self._undock_action = ActionClient(self, Undock, self.get_parameter("undock_action").value)
             self._dock_action_cli = ActionClient(self, Dock, self.get_parameter("dock_action").value)
+            dock_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
             self.create_subscription(DockStatus, self.get_parameter("dock_status_topic").value,
-                                     self._on_dock_status, 10)
+                                     self._on_dock_status, dock_qos)
             return True
         except Exception as e:
             self.get_logger().warn(f"irobot_create_msgs 미가용(sim/미설치 가능): {e}")
