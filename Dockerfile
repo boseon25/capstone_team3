@@ -1,29 +1,30 @@
 # ════════════════════════════════════════════════════════════════
 #  ND1 캡스톤 통합 실습 환경
 #  베이스: ROS2 Humble + noVNC (브라우저 데스크탑) — Windows 학생용
-#  기준: Ubuntu 22.04 / ROS2 Humble / Gazebo Fortress(ign gazebo v6) / Python 3.10
+#  기준: Ubuntu 22.04 / ROS2 Humble / Gazebo Classic 11 / Python 3.10
+#  (2026-07 TurtleBot4/Ignition-Fortress → TurtleBot3/Gazebo-Classic 마이그레이션:
+#   WSL2+GPU(d3d12) 환경에서 Ignition GPU LIDAR가 깨진 값을 반환하는 렌더링 버그를
+#   회피하기 위해 Classic Gazebo11 기반 TurtleBot3 스택으로 전환. 상세: WSLg_렌더_가이드.md)
 # ════════════════════════════════════════════════════════════════
 FROM tiryoh/ros2-desktop-vnc:humble
 
 USER root
 SHELL ["/bin/bash", "-c"]
 
-# ── 1. Gazebo Classic 제거 (Fortress와 충돌 방지) ──────────────────
-RUN apt-get update && apt-get remove -y "*gazebo*" && apt-get autoremove -y
+# ── 1~2. (구) Gazebo Classic 제거 + Fortress(Ignition) 설치 — 더 이상 사용 안 함 ──
+#    베이스 이미지가 기본 제공하는 Gazebo Classic 11을 그대로 사용.
 
-# ── 2. Gazebo Fortress 명시 설치 (명령어: ign gazebo) ──────────────
-RUN apt-get install -y lsb-release wget gnupg && \
-    wget https://packages.osrfoundation.org/gazebo.gpg \
-      -O /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
-      | tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null && \
-    apt-get update && apt-get install -y ros-humble-ros-gz
-
-# ── 3. Nav2 + TurtleBot4 (M8 연계) ────────────────────────────────
-#    ⚠️ turtlebot3-gazebo(Classic 전용)는 Fortress와 충돌 → 설치 금지
-RUN apt-get install -y \
+# ── 3. Nav2 + TurtleBot3 (Gazebo Classic 기반) ────────────────────
+#    turtlebot3-*, gazebo-ros-pkgs가 apt에 없으면 turtlebot3_simulations
+#    (humble-devel 소스)를 colcon build 하는 폴백이 필요할 수 있음.
+RUN apt-get update && apt-get install -y \
     ros-humble-navigation2 ros-humble-nav2-bringup \
-    ros-humble-turtlebot4-simulator ros-humble-turtlebot4-navigation
+    ros-humble-gazebo-ros-pkgs \
+    ros-humble-turtlebot3-gazebo \
+    ros-humble-turtlebot3-msgs \
+    ros-humble-turtlebot3-navigation2
+
+ENV TURTLEBOT3_MODEL=burger
 
 # ── 4. Foxglove + 분석 라이브러리 (M13 연계) ──────────────────────
 RUN apt-get install -y ros-humble-foxglove-bridge python3-pip && \
