@@ -98,7 +98,7 @@ ros2 launch nd1_capstone bringup.launch.py \
 
 ---
 
-## Phase 5. 시나리오 구현 맵 선정과 SLAM 맵 생성 *(07.01~02 update)
+## Phase 5. 시나리오 구현 맵 선정과 SLAM 맵 생성
 
 ### 5-1. 테스트 맵 서칭 및 선정
 * **후보군 검토:** AWS Hospital World, Simple Colored Warehouse, Jetty World
