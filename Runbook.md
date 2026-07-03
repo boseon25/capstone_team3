@@ -12,7 +12,7 @@
 2. [Phase 2. 가상 물리 엔진 구동 및 매핑 오류](#phase-2-가상-물리-엔진-구동-및-매핑-오류)
 3. [Phase 3. ROS2 프레임워크 및 파이프라인 에러](#phase-3-ros2-프레임워크-및-파이프라인-에러)
 4. [Phase 4. 노드 통합 및 시나리오 런타임 제약](#phase-4-노드-통합-및-시나리오-런타임-제약)
-5. [Phase 5. 시나리오 구현 맵 선정과 SLAM 맵 생성](#Phase-5-시나리오-구현-맵-선정과-slam-맵-생성-*(07.01~02-update))
+5. [Phase 5. 시나리오 구현 맵 선정과 SLAM 맵 생성](#Phase-5-시나리오-구현-맵-선정과-slam-맵-생성)
 6. [📌 부록: 물리 환경 확정 구역 좌표](#-부록-물리-환경-확정-구역-좌표)
 7. [📅 작업 로그 (Daily Log)](#-작업-로그-daily-log)
 
@@ -98,7 +98,7 @@ ros2 launch nd1_capstone bringup.launch.py \
 
 ---
 
-## Phase 5. 시나리오 구현 맵 선정과 SLAM 맵 생성 *(07.01~02 update)
+## Phase 5. 시나리오 구현 맵 선정과 SLAM 맵 생성
 
 ### 5-1. 테스트 맵 서칭 및 선정
 * **후보군 검토:** AWS Hospital World, Simple Colored Warehouse, Jetty World
@@ -131,12 +131,15 @@ ros2 run turtlebot3_gazebo turtlebot3_drive
 
 ## 📅 작업 로그 (Daily Log)
 
-### 2026-07-02 ~ 03
+### 2026-07-02
 1. **테스트 맵 서칭 및 선정**
     * 후보군 검토: AWS Hospital World, Simple Colored Warehouse, Jetty World
     * 최종 선정: 복잡도와 실용성을 고려하여 `aws-robomaker-hospital-world` 채택
 2. **자동 탐색 (Auto-Explore) 연동 및 한계 식별**
     * TurtleBot3 Waffle_pi 모델과 `turtlebot3_drive` 노드를 이용해 자동 맵핑 시도.
     * 맵 스케일 문제로 RViz 격자 크기 및 LiDAR 범위 대폭 상향 조정.
-    * **이슈:** 장시간 탐색 과정에서 로봇이 장애물과 충돌 후 제자리 회전 무한 루프 및 물리적 전복 현상 발생. 기존 맵 데이터(Odometry) 완전 붕괴.
-    * **결과:** SLAM 기반의 맵 자체 생성을 중단하고, 사전 제작된 2D 맵 파일(`.yaml`, `.pgm`)을 Nav2(AMCL)에 덮어씌워 사용하는 우회 방식으로 아키텍처 노선 변경.
+
+### 2026-07-03
+1. **Auto-Explore을 통한 SLAM 생성 중 에러 발생**
+    * 이슈: 장시간 탐색 과정에서 로봇이 장애물과 충돌 후 제자리 회전 무한 루프 및 물리적 전복 현상 발생. 기존 맵 데이터(Odometry) 완전 붕괴.
+    * 결과: SLAM 기반의 맵 자체 생성을 중단하고, 사전 제작된 2D 맵 파일(`.yaml`, `.pgm`)을 Nav2(AMCL)에 덮어씌워 사용하는 우회 방식으로 아키텍처 노선 변경.
