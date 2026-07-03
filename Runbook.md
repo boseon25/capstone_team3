@@ -1,4 +1,4 @@
-# 🛠️ ND1 Capstone 트러블슈팅 런북 (Runbook)
+# 🛠️ ND1 Capstone Troubleshooting Runbook
 
 [![ROS2](https://img.shields.io/badge/ROS2-Humble-blue.svg)](https://docs.ros.org/en/humble/) [![Gazebo](https://img.shields.io/badge/Gazebo-Classic_11-orange.svg)](https://classic.gazebosim.org/) [![Docker](https://img.shields.io/badge/Docker-Supported-2496ED.svg)](https://www.docker.com/)
 
