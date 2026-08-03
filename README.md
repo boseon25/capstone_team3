@@ -5,6 +5,10 @@
 **AWS RoboMaker Hospital World** 위에서 자연어 명령으로 병실에 백신을 배달하는
 시나리오로 재구성한 프로젝트.
 
+![데모 스크린샷](demo/thumbnail.jpg)
+
+▶ [데모 영상 (demo/demo.webm)](demo/demo.webm)
+
 ## 시나리오
 "301호 환자에게 A형 독감 백신 가져다줘" 같은 자연어 명령을 LLM(Groq)이 해석해
 로봇이 약국(pharmacy)에서 해당 백신을 픽업(텔레포트)한 뒤 지정된 병실로 이동해
