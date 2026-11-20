@@ -1,73 +1,73 @@
-# capstone_team3 — 병원 백신 배달 로봇 (TurtleBot3 + Nav2 + LLM)
+# 자연어 명령 병원 백신 배달 로봇
 
-`capstone_team3`(원본: TurtleBot4 + Gazebo Ignition + Docker) 캡스톤 키트를
-**TurtleBot3 + Gazebo classic + 네이티브(Docker 미사용) 환경**으로 이식하고,
-**AWS RoboMaker Hospital World** 위에서 자연어 명령으로 병실에 백신을 배달하는
-시나리오로 재구성한 프로젝트.
+> 말 한 문장으로 약국에서 백신을 받아 병실로 배달하는 시뮬레이션 로봇 · 1명 · 내 역할: 기획·구현 전 과정
 
-![데모 스크린샷](demo/thumbnail.jpg)
+![병원 월드에서 배달 중인 TurtleBot3](demo/thumbnail.jpg)
 
 ▶ [데모 영상 (demo/demo.webm)](demo/demo.webm)
 
-## 시나리오
-"301호 환자에게 A형 독감 백신 가져다줘" 같은 자연어 명령을 LLM(Groq)이 해석해
-로봇이 약국(pharmacy)에서 해당 백신을 픽업(텔레포트)한 뒤 지정된 병실로 이동해
-배달(텔레포트)한다. 백신은 총 4종(A/B/AB/O형), 병실은 4개 + 약국 1개.
+## 결과
 
-## 아키텍처 (토픽 계약 — capstone_team3 원본과 동일, 변경 금지)
+- 배달 범위: 좌표 2곳(A/B) → 약국 1곳 + 병실 4곳(301~304호), 백신 4종(A/B/AB/O형)
+- 명령 방식: 좌표 지정 → 자연어 한 문장 (LLM이 없으면 규칙 기반 폴백으로 계속 동작)
+
+## 문제
+
+원본 캡스톤 키트는 TurtleBot4 + Gazebo Ignition + Docker 환경이라 내 PC에서 그대로 돌릴 수 없었고, 좌표 2개(A/B)만 오가는 단순 pick & place였다. 실제 병원처럼 여러 병실·여러 물품을 자연어 한 문장으로 지시할 수 있게 만드는 것이 목표였다.
+
+## 내 역할 (1명, 전 과정)
+
+- TurtleBot4·Ignition·Docker 키트를 TurtleBot3·Gazebo classic 네이티브 환경으로 옮겼다
+- AWS RoboMaker 병원 월드를 넣고 완성 지도(map_server + AMCL) 위에서 주행하도록 바꿨다
+- 병원 월드에 맞게 Nav2·AMCL 파라미터를 조정했다
+- 병실 4곳·약국 좌표(rooms.yaml)와 백신 4종 매핑(vaccines.yaml)을 만들었다
+- LLM(Groq) 명령 해석 노드와 규칙 기반 폴백 파서를 연결했다
+- Gazebo 텔레포트로 픽업·배치를 대신하는 노드를 비동기 방식으로 고쳤다
+
+## 기술과 고른 이유
+
+- **ROS 2 Humble**: 캡스톤 키트의 토픽 계약(/mission, /nav_request 등)을 그대로 유지하려고
+- **Nav2**: 경로 계획·장애물 회피를 직접 짜지 않고 검증된 내비게이션 스택을 쓰려고
+- **map_server + AMCL**: 지도가 고정된 병원이라 실시간 SLAM 대신 완성 지도 위 위치추정이 더 안정적이라서
+- **TurtleBot3 + Gazebo classic**: Docker 없이 내 PC(Ubuntu 22.04)에서 바로 돌리려고
+- **AWS RoboMaker Hospital World**: 병실·복도가 있는 실제 병원 구조를 시뮬레이션하려고
+- **LLM(Groq) + 규칙 기반 폴백**: 자유로운 문장을 이해하되, API 키가 없거나 실패해도 동작이 멈추지 않게 하려고
+
+## 구조
+
+![시스템 구조도](images/structure.png)
+
 ```
 /llm_command ─▶ Node A(LLM+폴백) ─/mission─▶ Coordinator(FSM)
                                               │  /nav_request   ─▶ Node B(Nav2) ─/nav_result─┐
                                               │  /grasp_request ─▶ Node C(텔레포트) ─/grasp_result┘
                                               └─ /robot_status (상태 로그)
 ```
-- SLAM 대신 **map_server + AMCL**로 고정 지도 위에서 위치추정 (map: `maps/hospital_map.yaml`)
-- Node C의 "파지/배치"는 실제 로봇팔 없이 **Gazebo `/spawn_entity`, `/delete_entity`로 텔레포트**해 시뮬레이션
+- 로봇팔이 없으므로 Node C의 "파지/배치"는 Gazebo `/spawn_entity`, `/delete_entity` 텔레포트로 시뮬레이션
 
-## 폴더 구조
-```
-capstone_team3/
-├─ README.md
-├─ .env.example                       # GROQ_API_KEY (비워둠 — .env로 복사해 채울 것)
-├─ config/
-│  ├─ rooms.yaml                      # 약국 + 병실 4개 좌표(map 프레임)
-│  ├─ vaccines.yaml                   # 백신 4종 → box 엔티티명
-│  └─ burger_hospital.yaml            # Nav2/AMCL 파라미터(hospital world용으로 튜닝)
-├─ maps/hospital_map.{pgm,yaml}       # 완성된 병원 지도
-├─ scripts/smoke_test.py
-└─ src/
-   ├─ nd1_capstone_tb3/
-   │  ├─ launch/
-   │  │  ├─ hospital_world.launch.py    # 병원 월드 + TurtleBot3 스폰
-   │  │  ├─ map_localization.launch.py  # map_server + AMCL + Nav2 + RViz
-   │  │  ├─ spawn_boxes.launch.py       # 백신 4종 스폰(약국 근처)
-   │  │  └─ bringup.launch.py           # 캡스톤 4노드(A/B/C/Coordinator)
-   │  ├─ models/vaccine_{a,b,ab,o}.sdf  # 백신 소품(색상별)
-   │  └─ nd1_capstone_tb3/ (node_a_llm·node_b_nav·node_c_grasp·coordinator_fsm)
-   ├─ nd1_m7_ik/                       # IK 라이브러리(node_c_grasp가 사용)
-   ├─ aws-robomaker-hospital-world/    # 병원 Gazebo 월드 — git 추적 제외, 별도 clone 필요
-   └─ m-explore-ros2/                  # explore_lite — git 추적 제외, 별도 clone 필요
-```
+## 트러블슈팅
 
-> `aws-robomaker-hospital-world`, `m-explore-ros2`는 각각 자체 `.git`을 가진 외부
-> 저장소라 `.gitignore`로 제외했다. 이 컴퓨터가 아닌 곳에서 새로 clone했다면 아래를 먼저 실행:
-> ```bash
-> git clone -b ros2 https://github.com/aws-robotics/aws-robomaker-hospital-world.git src/aws-robomaker-hospital-world
-> git clone https://github.com/robo-friends/m-explore-ros2.git src/m-explore-ros2
-> touch src/m-explore-ros2/map_merge/COLCON_IGNORE   # map_merge는 미사용
-> ```
+- gzclient가 "Camera px != 0"으로 종료 → EOL 배너 GUI 플러그인과 충돌 → 플러그인 없는 순정 gzclient로 launch 수정 → 월드 화면 정상 실행
+- `/spawn_entity`·`/delete_entity` 응답이 간헐적으로 타임아웃 → 콜백 안 중첩 스핀(`spin_until_future_complete`)에서 응답 유실 → `add_done_callback` 비동기 패턴으로 변경 → 픽업·배치 응답 안정화
+- gzclient·rviz2가 `libpthread.so.0` 심볼 에러로 종료 → VSCode(Snap)의 GTK 환경변수 누출 → launch 전 `unset GTK_PATH ...`로 정리 → 정상 실행
+- Nav2가 "map 프레임 없음" 경고 반복 → AMCL 초기 위치 미설정 → 스폰 좌표(3.75, 2.75)로 `/initialpose` 먼저 발행 → 파티클 수렴 후 주행 시작
 
-## 0. 최초 1회 — 빌드
+## 실행 방법
+
+### 설치 (최초 1회)
 ```bash
+git clone -b ros2 https://github.com/aws-robotics/aws-robomaker-hospital-world.git src/aws-robomaker-hospital-world
+git clone https://github.com/robo-friends/m-explore-ros2.git src/m-explore-ros2
+touch src/m-explore-ros2/map_merge/COLCON_IGNORE
+
 source /opt/ros/humble/setup.bash
-source ~/turtlebot3_ws/install/setup.bash   # turtlebot3_gazebo 등 오버레이 대상 먼저 소싱
+source ~/turtlebot3_ws/install/setup.bash
 cd ~/capstone_team3
 PATH=/usr/bin:$PATH colcon build --symlink-install
+cp .env.example .env   # GROQ_API_KEY 입력 (없으면 폴백 파서로 동작)
 ```
-> `aws-robomaker-hospital-world`는 cmake 빌드 시점에 가구 3D 모델 40여 종을
-> Fuel에서 받는다 — 인터넷 필요, 수 분 걸릴 수 있음.
 
-새 터미널을 열 때마다 아래 3줄을 항상 먼저 실행한다:
+새 터미널마다:
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/turtlebot3_ws/install/setup.bash
@@ -75,78 +75,28 @@ cd ~/capstone_team3 && source install/setup.bash
 export TURTLEBOT3_MODEL=burger
 ```
 
-## 1. 실행 순서 (터미널 5개)
-
-**터미널 1 — 병원 월드 + 로봇 스폰**
+### 실행 (터미널 5개)
 ```bash
-ros2 launch nd1_capstone_tb3 hospital_world.launch.py
-```
-(gzserver가 시작할 때 온라인 모델 DB 조회로 1~2분 걸릴 수 있음. 로봇 스폰 로그까지 기다릴 것)
-
-**터미널 2 — map_server + AMCL + Nav2 + RViz**
-```bash
-ros2 launch nd1_capstone_tb3 map_localization.launch.py
-```
-
-**터미널 3 — 초기 위치 설정** (로봇 스폰 좌표 3.75, 2.75와 반드시 일치시킬 것)
-```bash
+ros2 launch nd1_capstone_tb3 hospital_world.launch.py       # 1. 병원 월드 + 로봇
+ros2 launch nd1_capstone_tb3 map_localization.launch.py     # 2. map_server + AMCL + Nav2 + RViz
 ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "{
   header: {frame_id: 'map'},
   pose: {pose: {position: {x: 3.75, y: 2.75, z: 0.0}, orientation: {w: 1.0}},
          covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.06]}
-}"
+}"                                                          # 3. 초기 위치
+ros2 launch nd1_capstone_tb3 spawn_boxes.launch.py          # 4. 백신 4종 스폰
+ros2 launch nd1_capstone_tb3 bringup.launch.py sim_mode:=false  # 5. 4노드 기동
 ```
-RViz에 지도 위 로봇 파티클이 한 점으로 수렴하면 성공.
 
-**터미널 4 — 백신 4종 스폰** (최초 1회, 약국 근처에 배치)
+### 명령 내리기
 ```bash
-ros2 launch nd1_capstone_tb3 spawn_boxes.launch.py
+ros2 topic pub -r 2 -t 3 /llm_command std_msgs/msg/String "{data: '301호 환자에게 A형 독감 백신 가져다줘'}"
+ros2 topic echo /robot_status   # 약국 이동 → 픽업 → 병실 이동 → 배치 진행 상황
 ```
+가능한 조합: 301호·A형, 302호·B형, 303호·AB형, 304호·O형
 
-**터미널 5 — 캡스톤 4노드(LLM/Nav2/텔레포트/FSM) 기동**
-```bash
-ros2 launch nd1_capstone_tb3 bringup.launch.py sim_mode:=false
-```
-시작 로그에 `Node A 시작 — LLM=ON`이 뜨면 GROQ_API_KEY 인식 성공(안 뜨면 폴백 파서로만 동작).
+## 배운 점 · 다음 계획
 
-## 2. 명령 내리기
-```bash
-ros2 topic pub --once /llm_command std_msgs/msg/String "{data: '301호 환자에게 A형 독감 백신 가져다줘'}"
-```
-가능한 조합: 301호·A형, 302호·B형, 303호·AB형, 304호·O형.
-`ros2 topic echo /robot_status`로 약국 이동→픽업→병실 이동→배치까지 진행 상황을 볼 수 있다.
-
-> `--once`는 가끔 최초 1회 발행이 구독자 매칭 타이밍에 유실될 수 있어
-> `ros2 topic pub -r 2 -t 3 /llm_command ...` (2Hz로 3초간 반복 발행)을 권장.
-
-## 3. GROQ API 키
-```bash
-cp .env.example .env   # .env에 실제 GROQ_API_KEY 입력 (.env는 .gitignore 처리되어 git에 안 올라감)
-```
-키가 없거나 유효하지 않으면 `node_a_llm.py`가 규칙 기반 폴백 파서로 자동 전환되어
-동작 자체는 계속된다(로그에 `⚠️ LLM 파싱 실패` 표시).
-
-## 4. 알려진 이슈 / 트러블슈팅
-- **gzclient가 "Camera px != 0" assertion으로 죽는 경우**: `gazebo_ros`의
-  `gzclient.launch.py`가 붙이는 `libgazebo_ros_eol_gui.so`(EOL 배너) 플러그인과
-  충돌하는 경우가 있다. `hospital_world.launch.py`는 이미 플러그인 없는 순정
-  `gzclient`를 쓰도록 수정되어 있음.
-- **`/spawn_entity`, `/delete_entity` 응답이 간헐적으로 타임아웃**: classic
-  Gazebo factory 플러그인이 부하 상황에서 응답을 늦게 보내는 경우가 있다.
-  `node_c_grasp.py`는 `spin_until_future_complete`(중첩 스핀, 콜백 안에서
-  재진입 스핀 시 응답 유실 가능) 대신 `add_done_callback` 비동기 패턴으로
-  수정되어 있음 — 이 패턴을 유지할 것.
-- **VSCode(Snap) 환경변수(GTK_PATH 등) leak으로 gzclient/rviz2/터미널 앱이
-  `libpthread.so.0` 심볼 에러로 죽는 경우**: launch 전에
-  `unset GTK_PATH GTK_EXE_PREFIX GTK_IM_MODULE_FILE GDK_PIXBUF_MODULE_FILE GIO_MODULE_DIR`
-  로 정리 후 실행.
-- **AMCL 초기 위치를 안 잡으면 Nav2가 계속 "map 프레임 없음" 경고**: 위 1번
-  터미널3의 `/initialpose` 발행을 반드시 먼저 할 것.
-
-## 5. 원본(capstone_team3, TurtleBot4) 대비 변경점
-- TurtleBot4/Ignition → **TurtleBot3/Gazebo classic** (`gazebo_ros spawn_entity.py`, `/spawn_entity`·`/delete_entity`)
-- 기본 월드 → **AWS RoboMaker `hospital.world`**
-- SLAM 실시간 매핑 대신 **완성된 고정 지도 + map_server/AMCL**
-- 좌표 2개(A/B) pick&place → **병실 4개 + 약국 1개, 백신 4종 매핑**으로 확장
-- 도킹(dock/undock) 관련 인자·상태 제거 (TB3에는 Create3 도킹 스테이션 없음)
-- Docker/noVNC 미사용 — 호스트 네이티브 ROS2 Humble + Gazebo 11(classic)
+- 배운 점: ROS 2 콜백 안에서 서비스 응답을 중첩 스핀으로 기다리면 응답이 유실될 수 있어, 비동기 콜백 패턴이 필요하다는 것
+- 놓친 것: 픽업·배치는 실제 로봇팔 없이 텔레포트로 대신했고, 같은 명령을 반복 실행한 성공률은 아직 기록하지 않았다
+- 다음 계획: 병실·백신 조합별로 반복 실행해 성공 건수를 기록하고, 텔레포트를 IK 기반 로봇팔 파지로 바꾼다
